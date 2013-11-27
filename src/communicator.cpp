@@ -489,6 +489,7 @@ void Communicator::isUsbImagingDevice(libusb_device *dev, std::list<ImagingUsbDe
 		syslog(LOG_INFO, "Number of alternate settings:");
 
 		int j = 0;
+		int detached = 0;
 		while (j < inter->num_altsetting) {
 			interdesc = &inter->altsetting[j];
 
@@ -503,33 +504,38 @@ void Communicator::isUsbImagingDevice(libusb_device *dev, std::list<ImagingUsbDe
 					syslog(LOG_INFO, "Error opening USB imaging device: %d", r);
 					break;
 				} else {
-					if (libusb_kernel_driver_active(deviceHandle, 0) == 0) { //find out if kernel driver is attached
-
-						if( libusb_claim_interface(deviceHandle, i) == 0) {; //claim imaging interface
-
-							ImagingUsbDevice imgUsbDevice;
-
-							imgUsbDevice.iVendorId = desc.idVendor;
-							imgUsbDevice.iProductId = desc.idProduct;
-							bzero(&imgUsbDevice.iVendorName[0], 255);
-							bzero(&imgUsbDevice.iProductName[0], 255);
-
-							r = libusb_get_string_descriptor_ascii(deviceHandle, desc.iManufacturer, &(imgUsbDevice.iVendorName[0]), 255);
-							if (r <= 0)
-								syslog(LOG_ERR, "Error getting USB Vendor name: %d", r);
-							r = libusb_get_string_descriptor_ascii(deviceHandle, desc.iProduct, &(imgUsbDevice.iProductName[0]), 255);
-							if (r <= 0)
-								syslog(LOG_ERR, "Error getting USB Product name: %d", r);
-
-							libusb_close(deviceHandle);
-
-							syslog(LOG_INFO, "Device Manufacturer: %s", imgUsbDevice.iVendorName);
-							syslog(LOG_INFO, "Device Product: %s", imgUsbDevice.iProductName);
-							deviceList->push_front(imgUsbDevice);
-						}
+					detached=0;
+					if (libusb_kernel_driver_active(deviceHandle, 0) != 0) { //find out if kernel driver is attached
+						libusb_detach_kernel_driver(deviceHandle, i); // detach kernel driver
+						detached=1;
 					}
-					else
-						syslog(LOG_INFO, "Kernel driver active");
+
+					if( libusb_claim_interface(deviceHandle, i) == 0) {; //claim imaging interface
+
+						ImagingUsbDevice imgUsbDevice;
+
+						imgUsbDevice.iVendorId = desc.idVendor;
+						imgUsbDevice.iProductId = desc.idProduct;
+						bzero(&imgUsbDevice.iVendorName[0], 255);
+						bzero(&imgUsbDevice.iProductName[0], 255);
+
+						r = libusb_get_string_descriptor_ascii(deviceHandle, desc.iManufacturer, &(imgUsbDevice.iVendorName[0]), 255);
+						if (r <= 0)
+							syslog(LOG_ERR, "Error getting USB Vendor name: %d", r);
+						r = libusb_get_string_descriptor_ascii(deviceHandle, desc.iProduct, &(imgUsbDevice.iProductName[0]), 255);
+						if (r <= 0)
+							syslog(LOG_ERR, "Error getting USB Product name: %d", r);
+
+						libusb_close(deviceHandle);
+
+						syslog(LOG_INFO, "Device Manufacturer: %s", imgUsbDevice.iVendorName);
+						syslog(LOG_INFO, "Device Product: %s", imgUsbDevice.iProductName);
+						deviceList->push_front(imgUsbDevice);
+					}
+
+					if (detached) { //find out if kernel driver was detached
+						libusb_attach_kernel_driver(deviceHandle, i); // attach kernel driver
+					}
 
 				}
 				break;
